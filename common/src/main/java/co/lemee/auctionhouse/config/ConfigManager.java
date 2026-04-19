@@ -23,6 +23,7 @@ public class ConfigManager {
             ConfigData configData = getConfigData(configFile);
 
             {
+                configFile.getParentFile().mkdirs();
                 BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(configFile), StandardCharsets.UTF_8));
                 writer.write(GSON.toJson(configData));
                 writer.close();
