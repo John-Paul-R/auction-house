@@ -24,10 +24,9 @@ configurations {
 repositories {
     mavenCentral()
     maven { url 'https://maven.fabricmc.net/' }
-    maven { url 'https://oss.sonatype.org/content/repositories/snapshots' }
     maven { url 'https://maven.nucleoid.xyz/' }
     flatDir { // temporary, until sgui release a neoforge compatible version
-        dir 'libs'
+        dirs 'libs', rootProject.file('common/libs')
     }
 }
 
@@ -35,8 +34,11 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:$rootProject.fabric_loader_version"
     modApi "net.fabricmc.fabric-api:fabric-api:$rootProject.fabric_api_version+$rootProject.minecraft_version"
 
-    modImplementation include('me.lucko:fabric-permissions-api:0.2-SNAPSHOT')
+    modImplementation include('me.lucko:fabric-permissions-api:0.6.1')
     modImplementation include("eu.pb4:sgui:1.12.0+1.21.11")
+
+    implementation "org.sqlite:sqlite-jdbc:3.49.1.0"
+    shadowBundle "org.sqlite:sqlite-jdbc:3.49.1.0"
 
     common(project(path: ':common', configuration: 'namedElements')) { transitive false }
     shadowBundle project(path: ':common', configuration: 'transformProductionFabric')
@@ -53,6 +55,7 @@ processResources {
 shadowJar {
     configurations = [project.configurations.shadowBundle]
     archiveClassifier.set("dev-shadow")
+    relocate 'org.sqlite', 'co.lemee.auctionhouse.libs.sqlite'
 }
 
 remapJar {
