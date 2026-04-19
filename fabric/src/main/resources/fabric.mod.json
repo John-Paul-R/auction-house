@@ -18,6 +18,9 @@
 	"entrypoints": {
 		"main": [
           "co.lemee.auctionhouse.AuctionHouseFabricMod"
+		],
+		"client": [
+          "co.lemee.auctionhouse.client.AuctionHouseClientMod"
 		]
 	},
 	"mixins": [

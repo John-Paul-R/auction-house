@@ -1,6 +1,7 @@
 package co.lemee.auctionhouse;
 
 import co.lemee.auctionhouse.command.AuctionHouseCommands;
+import co.lemee.auctionhouse.network.AuctionHouseHandshake;
 import me.lucko.fabric.api.permissions.v0.Permissions;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -18,6 +19,7 @@ public class AuctionHouseFabricMod implements ModInitializer {
         AuctionHouseMod.impactor = FabricLoader.getInstance().isModLoaded("impactor");
 
         AuctionHouseMod.initialize();
+        AuctionHouseHandshake.register();
 
         ServerLifecycleEvents.SERVER_STARTED.register(AuctionHouseMod::onServerStarted);
         ServerLifecycleEvents.SERVER_STOPPING.register(AuctionHouseMod::onServerStopping);

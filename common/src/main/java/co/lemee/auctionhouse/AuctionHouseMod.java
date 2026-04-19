@@ -6,6 +6,7 @@ import co.lemee.auctionhouse.sql.DatabaseManager;
 import co.lemee.auctionhouse.sql.SQLiteDatabaseManager;
 import co.lemee.auctionhouse.util.CommonMethods;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -13,6 +14,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.function.Consumer;
 
 public abstract class AuctionHouseMod {
     public static final String MOD_ID = "auctionhouse";
@@ -24,6 +26,14 @@ public abstract class AuctionHouseMod {
     public static boolean impactor = false;
     public static boolean realeconomy = false;
     public static MinecraftServer server;
+
+    /**
+     * Platform-specific hook for sending the "open search screen" packet to a player.
+     * Each loader initialises this at startup. Defaults to a no-op (should never be called
+     * before the platform sets it, but safe to leave unfilled on dedicated servers where the
+     * client will never have the mod).
+     */
+    public static Consumer<ServerPlayer> openSearchScreen = player -> {};
 
     static {
         try {
