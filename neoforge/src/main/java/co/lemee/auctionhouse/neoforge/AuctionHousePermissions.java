@@ -1,9 +1,9 @@
 package co.lemee.auctionhouse.neoforge;
 
 import co.lemee.auctionhouse.AuctionHouseMod;
-import co.lemee.auctionhouse.command.*;
+import co.lemee.auctionhouse.command.AuctionHouseCommands;
+import co.lemee.auctionhouse.command.PermissionNodes;
 import com.mojang.brigadier.CommandDispatcher;
-import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.permissions.Permissions;
@@ -20,53 +20,39 @@ import static co.lemee.auctionhouse.AuctionHouseMod.LOGGER;
 public class AuctionHousePermissions {
 
     private static final PermissionNode<Boolean> CANCEL_PERM = new PermissionNode<>(
-            AuctionHouseMod.MOD_ID,
-            "cancel",
-            PermissionTypes.BOOLEAN,
-            (player, uuid, permissionDynamicContexts) -> true);
+            AuctionHouseMod.MOD_ID, "cancel", PermissionTypes.BOOLEAN,
+            (player, uuid, ctx) -> true);
 
     private static final PermissionNode<Boolean> EXPIRED_PERM = new PermissionNode<>(
-            AuctionHouseMod.MOD_ID,
-            "expired",
-            PermissionTypes.BOOLEAN,
-            (player, uuid, permissionDynamicContexts) -> true);
+            AuctionHouseMod.MOD_ID, "expired", PermissionTypes.BOOLEAN,
+            (player, uuid, ctx) -> true);
+
     private static final PermissionNode<Boolean> HELP_PERM = new PermissionNode<>(
-            AuctionHouseMod.MOD_ID,
-            "help",
-            PermissionTypes.BOOLEAN,
-            (player, uuid, permissionDynamicContexts) -> true);
+            AuctionHouseMod.MOD_ID, "help", PermissionTypes.BOOLEAN,
+            (player, uuid, ctx) -> true);
+
     private static final PermissionNode<Boolean> MAIN_PERM = new PermissionNode<>(
-            AuctionHouseMod.MOD_ID,
-            "main",
-            PermissionTypes.BOOLEAN,
-            (player, uuid, permissionDynamicContexts) -> true);
+            AuctionHouseMod.MOD_ID, "main", PermissionTypes.BOOLEAN,
+            (player, uuid, ctx) -> true);
+
     private static final PermissionNode<Boolean> RETURN_PERM = new PermissionNode<>(
-            AuctionHouseMod.MOD_ID,
-            "return",
-            PermissionTypes.BOOLEAN,
-            (player, uuid, permissionDynamicContexts) -> true);
+            AuctionHouseMod.MOD_ID, "return", PermissionTypes.BOOLEAN,
+            (player, uuid, ctx) -> true);
+
     private static final PermissionNode<Boolean> RELOAD_PERM = new PermissionNode<>(
-            AuctionHouseMod.MOD_ID,
-            "reload",
-            PermissionTypes.BOOLEAN,
-            (player, uuid, permissionDynamicContexts) -> {
-                if (player == null) {
-                    return false;
-                } else {
-                    return player.permissions().hasPermission(Permissions.COMMANDS_OWNER);
-                }
+            AuctionHouseMod.MOD_ID, "reload", PermissionTypes.BOOLEAN,
+            (player, uuid, ctx) -> {
+                if (player == null) return false;
+                return player.permissions().hasPermission(Permissions.COMMANDS_OWNER);
             });
+
     private static final PermissionNode<Boolean> SELL_PERM = new PermissionNode<>(
-            AuctionHouseMod.MOD_ID,
-            "sell",
-            PermissionTypes.BOOLEAN,
-            (player, uuid, permissionDynamicContexts) -> true);
+            AuctionHouseMod.MOD_ID, "sell", PermissionTypes.BOOLEAN,
+            (player, uuid, ctx) -> true);
 
     private static final PermissionNode<Boolean> SELLING_PERM = new PermissionNode<>(
-            AuctionHouseMod.MOD_ID,
-            "selling",
-            PermissionTypes.BOOLEAN,
-            (player, uuid, permissionDynamicContexts) -> true);
+            AuctionHouseMod.MOD_ID, "selling", PermissionTypes.BOOLEAN,
+            (player, uuid, ctx) -> true);
 
     public static boolean hasPermission(CommandSourceStack source, PermissionNode<Boolean> permission) {
         try {
@@ -76,50 +62,29 @@ public class AuctionHousePermissions {
         }
     }
 
+    // Exhaustive switch — compiler will reject missing cases if PermissionNodes gains new constants.
+    private static PermissionNode<Boolean> permNodeFor(PermissionNodes node) {
+        return switch (node) {
+            case CANCEL  -> CANCEL_PERM;
+            case EXPIRED -> EXPIRED_PERM;
+            case HELP    -> HELP_PERM;
+            case MAIN    -> MAIN_PERM;
+            case RETURN  -> RETURN_PERM;
+            case RELOAD  -> RELOAD_PERM;
+            case SELL    -> SELL_PERM;
+            case SELLING -> SELLING_PERM;
+        };
+    }
+
     @SubscribeEvent
     public void permission(PermissionGatherEvent.Nodes event) {
         LOGGER.info("Registering permission nodes...");
-        event.addNodes(CANCEL_PERM, SELL_PERM, SELLING_PERM, EXPIRED_PERM, HELP_PERM, MAIN_PERM, RETURN_PERM, RELOAD_PERM);
+        event.addNodes(CANCEL_PERM, EXPIRED_PERM, HELP_PERM, MAIN_PERM, RETURN_PERM, RELOAD_PERM, SELL_PERM, SELLING_PERM);
     }
 
     @SubscribeEvent
     public void onCommandsRegister(RegisterCommandsEvent event) {
-        CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
-        this.register(dispatcher);
-    }
-
-    private void register(CommandDispatcher<CommandSourceStack> dispatcher) {
-        dispatcher.register(Commands.literal("ah")
-                .then(Commands.literal("cancel")
-                        .requires((cs) -> hasPermission(cs, CANCEL_PERM))
-                        .executes(AuctionHouseCancelCommand::run)));
-        dispatcher.register(Commands.literal("ah")
-                .then(Commands.literal("expired")
-                        .requires(cs -> hasPermission(cs, EXPIRED_PERM))
-                        .executes(AuctionHouseExpiredCommand::run)));
-        dispatcher.register(Commands.literal("ah")
-                .then(Commands.literal("help")
-                        .requires(cs -> hasPermission(cs, HELP_PERM))
-                        .executes(AuctionHouseHelpCommand::run)));
-        dispatcher.register(Commands.literal("ah")
-                .requires(cs -> hasPermission(cs, MAIN_PERM))
-                .executes(AuctionHouseMainCommand::run));
-        dispatcher.register(Commands.literal("ah")
-                .then(Commands.literal("return")
-                        .requires(cs -> hasPermission(cs, RETURN_PERM))
-                        .executes(AuctionHouseReturnCommand::run)));
-        dispatcher.register(Commands.literal("ah")
-                .then(Commands.literal("reload")
-                        .requires(cs -> hasPermission(cs, RELOAD_PERM))
-                        .executes(AuctionHouseReloadCommand::run)));
-        dispatcher.register(Commands.literal("ah")
-                .then(Commands.literal("sell")
-                        .then(Commands.argument("price", DoubleArgumentType.doubleArg(0))
-                                .requires(cs -> hasPermission(cs, SELL_PERM))
-                                .executes(AuctionHouseSellCommand::run))));
-        dispatcher.register(Commands.literal("ah")
-                .then(Commands.literal("selling")
-                        .requires(cs -> hasPermission(cs, SELLING_PERM))
-                        .executes(AuctionHouseSellingCommand::run)));
+        AuctionHouseCommands.register(event.getDispatcher(),
+                (node, level) -> cs -> hasPermission(cs, permNodeFor(node)));
     }
 }
