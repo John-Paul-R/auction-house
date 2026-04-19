@@ -2,14 +2,19 @@ package co.lemee.auctionhouse.gui;
 
 import co.lemee.auctionhouse.AuctionHouseMod;
 import co.lemee.auctionhouse.network.ClientAuctionItem;
+import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.components.ObjectSelectionList;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.ItemEnchantments;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -28,7 +33,10 @@ import java.util.stream.Collectors;
  *   │  ┌─────────────────────────────┐   │
  *   │  │ [icon] Item name   $price   │   │
  *   │  │        by seller   time     │   │
- *   │  │ ...  (scrollable)          ↕│   │
+ *   │  │ [icon] Enchanted Book $p    │   │  ← expanded for enchanted items
+ *   │  │        • Sharpness V        │   │
+ *   │  │        • Unbreaking III     │   │
+ *   │  │        by seller   time    ↕│   │
  *   │  └─────────────────────────────┘   │
  *   │  Showing X / Y listings            │  ← status
  *   └─────────────────────────────────────┘
@@ -37,6 +45,10 @@ import java.util.stream.Collectors;
  * snapshot when the screen opens, and again in response to a
  * {@link co.lemee.auctionhouse.network.AuctionHouseRequestListingsPayload} sent every
  * {@value #REFRESH_INTERVAL} ticks (~3 s).  Filtering is applied locally on the client.
+ * <p>
+ * Entries are rendered by {@link VariableHeightList}, which supports variable row heights.
+ * Enchanted books (and regular enchanted items) get an expanded row listing each
+ * enchantment by name, while all other items use the compact two-line layout.
  */
 public class GUIAuctionHouseSearch extends Screen {
 
@@ -47,7 +59,8 @@ public class GUIAuctionHouseSearch extends Screen {
     private static final int TITLE_H          = 14;
     private static final int BOX_H            = 20;
     private static final int STATUS_H         = 12;
-    private static final int ENTRY_H          = 28;
+    /** Base entry height used for plain items and as the minimum for expanded entries. */
+    static final int BASE_ENTRY_H             = 28;
     private static final int INNER_PAD        = 4;
 
     // --- State ---------------------------------------------------------------
@@ -58,8 +71,8 @@ public class GUIAuctionHouseSearch extends Screen {
 
     // --- Widgets -------------------------------------------------------------
 
-    private EditBox  searchBox;
-    private ResultList resultList;
+    private EditBox          searchBox;
+    private VariableHeightList resultList;
 
     // --- Buy confirmation state -------------------------------------------
 
@@ -133,8 +146,7 @@ public class GUIAuctionHouseSearch extends Screen {
         int listY = boxY + BOX_H + INNER_PAD;
         int listH = panelY + panelH - listY - STATUS_H - INNER_PAD;
 
-        resultList = new ResultList(this.minecraft, panelW - 2, listH, listY, ENTRY_H);
-        resultList.setX(panelX + 1);
+        resultList = new VariableHeightList(this.font, panelX + 1, listY, panelW - 2, listH);
         this.addRenderableWidget(resultList);
 
         applyFilter();
@@ -307,125 +319,250 @@ public class GUIAuctionHouseSearch extends Screen {
                     .filter(item ->
                             item.itemStack().getHoverName().getString()
                                     .toLowerCase(Locale.ROOT).contains(query)
-                            || item.ownerName().toLowerCase(Locale.ROOT).contains(query))
+                            || item.ownerName().toLowerCase(Locale.ROOT).contains(query)
+                            || enchantmentNamesContain(item, query))
                     .collect(Collectors.toList());
         }
 
         if (resultList != null) {
-            resultList.refresh(filteredItems);
+            resultList.setEntries(buildEntries(filteredItems));
+        }
+    }
+
+    /**
+     * Returns {@code true} if any stored or applied enchantment name on the
+     * item's stack contains {@code query} (already lower-cased).
+     */
+    private static boolean enchantmentNamesContain(ClientAuctionItem item, String query) {
+        ItemEnchantments stored  = item.itemStack().get(DataComponents.STORED_ENCHANTMENTS);
+        ItemEnchantments applied = item.itemStack().get(DataComponents.ENCHANTMENTS);
+        for (ItemEnchantments ie : new ItemEnchantments[]{ stored, applied }) {
+            if (ie == null) continue;
+            for (var entry : ie.entrySet()) {
+                String name = Enchantment.getFullname(entry.getKey(), entry.getIntValue())
+                                         .getString().toLowerCase(Locale.ROOT);
+                if (name.contains(query)) return true;
+            }
+        }
+        return false;
+    }
+
+    /** Converts a list of auction items into typed {@link VariableHeightList.Entry} objects. */
+    private List<VariableHeightList.Entry> buildEntries(List<ClientAuctionItem> items) {
+        List<VariableHeightList.Entry> entries = new ArrayList<>(items.size());
+        for (ClientAuctionItem item : items) {
+            ItemEnchantments enchants = resolveEnchantments(item);
+            if (enchants != null && !enchants.isEmpty()) {
+                entries.add(new EnchantedItemEntry(item, enchants));
+            } else {
+                entries.add(new DefaultItemEntry(item));
+            }
+        }
+        return entries;
+    }
+
+    /**
+     * Returns the relevant {@link ItemEnchantments} for an item, preferring
+     * {@code STORED_ENCHANTMENTS} (enchanted books) over {@code ENCHANTMENTS}
+     * (tools/armour). Returns {@code null} if the item has no enchantments.
+     */
+    @Nullable
+    private static ItemEnchantments resolveEnchantments(ClientAuctionItem item) {
+        if (item.itemStack().is(Items.ENCHANTED_BOOK)) {
+            return item.itemStack().get(DataComponents.STORED_ENCHANTMENTS);
+        }
+        ItemEnchantments applied = item.itemStack().get(DataComponents.ENCHANTMENTS);
+        return (applied != null && !applied.isEmpty()) ? applied : null;
+    }
+
+    // =========================================================================
+    // Entry: compact two-line row for plain items
+    // =========================================================================
+
+    private class DefaultItemEntry extends VariableHeightList.Entry {
+
+        private final ClientAuctionItem item;
+
+        DefaultItemEntry(ClientAuctionItem item) {
+            this.item = item;
+        }
+
+        @Override
+        public int getHeight(Font font) {
+            return BASE_ENTRY_H;
+        }
+
+        @Override
+        public Component getNarration() {
+            return Component.literal(item.itemStack().getHoverName().getString()
+                    + " by " + item.ownerName()
+                    + " for $" + String.format("%.2f", item.price()));
+        }
+
+        @Override
+        public boolean mouseClicked(MouseButtonEvent event, boolean focused) {
+            if (event.button() == 0) {
+                GUIAuctionHouseSearch.this.pendingBuy = this.item;
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public void render(GuiGraphics g, int x, int y, int width,
+                           int mouseX, int mouseY, boolean hovered, Font font) {
+            int h = getHeight(font);
+
+            if (hovered) {
+                g.fill(x, y, x + width, y + h, 0x28FFFFFF);
+                g.setTooltipForNextFrame(font, item.itemStack(), mouseX, mouseY);
+            }
+
+            // Top separator
+            g.fill(x, y, x + width, y + 1, 0x30FFFFFF);
+
+            // Icon — centred vertically
+            int iconX = x + INNER_PAD;
+            int iconY = y + (h - 16) / 2;
+            g.renderItem(item.itemStack(), iconX, iconY);
+
+            int textLeft  = iconX + 18;
+            int rightEdge = x + width - INNER_PAD;
+            int topRow    = y + 4;
+            int botRow    = y + 4 + font.lineHeight + 1;
+
+            // Item name (white, truncated)
+            String name = item.itemStack().getHoverName().getString();
+            int maxNameW = width - 18 - 80 - INNER_PAD * 2;
+            if (font.width(name) > maxNameW) {
+                name = font.plainSubstrByWidth(name, maxNameW - 6) + "…";
+            }
+            g.drawString(font, name, textLeft, topRow, 0xFFFFFFFF, false);
+
+            // Seller name (gray)
+            g.drawString(font, "by " + item.ownerName(), textLeft, botRow, 0xFF999999, false);
+
+            // Price (gold, right-aligned to top row)
+            String priceStr = String.format("$%.2f", item.price());
+            g.drawString(font, priceStr, rightEdge - font.width(priceStr), topRow, 0xFFFFAA00, false);
+
+            // Time left (purple, right-aligned to bottom row)
+            String timeStr = item.timeLeft();
+            g.drawString(font, timeStr, rightEdge - font.width(timeStr), botRow, 0xFFAA55FF, false);
         }
     }
 
     // =========================================================================
-    // Inner: scrollable result list
+    // Entry: expanded row for enchanted books and enchanted equipment
     // =========================================================================
 
-    private class ResultList extends ObjectSelectionList<ResultList.Entry> {
+    /**
+     * Renders an expanded row that lists every enchantment by name below the
+     * item name.  The row height grows dynamically with the number of enchants.
+     *
+     * <pre>
+     * [icon] Enchanted Book                 $12.50
+     *        • Sharpness V
+     *        • Unbreaking III
+     *        • Mending
+     *        by seller                      2d:04h
+     * </pre>
+     */
+    private class EnchantedItemEntry extends VariableHeightList.Entry {
 
-        ResultList(Minecraft mc, int width, int height, int y, int itemHeight) {
-            super(mc, width, height, y, itemHeight);
-        }
+        private static final int ENCHANT_COLOR = 0xFFAB78FF; // soft purple
+        /** Vertical padding: top + between sections + bottom. */
+        private static final int PAD_V = 4;
+        /** Extra left indent for enchantment bullet lines. */
+        private static final int ENCHANT_INDENT = 8;
 
-        void refresh(List<ClientAuctionItem> items) {
-            this.clearEntries();
-            for (ClientAuctionItem item : items) {
-                this.addEntry(new Entry(item));
-            }
+        private final ClientAuctionItem item;
+        /** Snapshot of enchantments at entry-creation time — avoids repeated component lookups. */
+        private final List<Object2IntMap.Entry<net.minecraft.core.Holder<net.minecraft.world.item.enchantment.Enchantment>>> enchantList;
+
+        EnchantedItemEntry(ClientAuctionItem item, ItemEnchantments enchants) {
+            this.item = item;
+            this.enchantList = new ArrayList<>(enchants.entrySet());
         }
 
         @Override
-        public int getRowWidth() {
-            return this.width - 6;
+        public int getHeight(Font font) {
+            // name row + enchant rows + seller row, each separated by 2 px gaps
+            int rows = 1 + enchantList.size() + 1; // name, enchants..., seller
+            return PAD_V + rows * font.lineHeight + (rows - 1) * 2 + PAD_V;
         }
 
         @Override
-        protected int scrollBarX() {
-            return this.getX() + this.getWidth() - 6;
+        public Component getNarration() {
+            StringBuilder sb = new StringBuilder();
+            sb.append(item.itemStack().getHoverName().getString());
+            for (var e : enchantList) {
+                sb.append(", ").append(
+                        Enchantment.getFullname(e.getKey(), e.getIntValue()).getString());
+            }
+            sb.append(" by ").append(item.ownerName());
+            sb.append(String.format(" for $%.2f", item.price()));
+            return Component.literal(sb.toString());
         }
 
-        // ---------------------------------------------------------------------
-        // Entry
-        // ---------------------------------------------------------------------
+        @Override
+        public boolean mouseClicked(MouseButtonEvent event, boolean focused) {
+            if (event.button() == 0) {
+                GUIAuctionHouseSearch.this.pendingBuy = this.item;
+                return true;
+            }
+            return false;
+        }
 
-        class Entry extends ObjectSelectionList.Entry<Entry> {
+        @Override
+        public void render(GuiGraphics g, int x, int y, int width,
+                           int mouseX, int mouseY, boolean hovered, Font font) {
+            int h         = getHeight(font);
+            int lineH     = font.lineHeight;
+            int lineStep  = lineH + 2;
+            int textLeft  = x + INNER_PAD + 18;
+            int rightEdge = x + width - INNER_PAD;
 
-            private final ClientAuctionItem item;
-
-            Entry(ClientAuctionItem item) {
-                this.item = item;
+            if (hovered) {
+                g.fill(x, y, x + width, y + h, 0x28FFFFFF);
+                g.setTooltipForNextFrame(font, item.itemStack(), mouseX, mouseY);
             }
 
-            @Override
-            public Component getNarration() {
-                return Component.literal(item.itemStack().getHoverName().getString()
-                        + " by " + item.ownerName()
-                        + " for $" + String.format("%.2f", item.price()));
+            // Top separator
+            g.fill(x, y, x + width, y + 1, 0x30FFFFFF);
+
+            // Icon — centred vertically in the full entry height
+            int iconX = x + INNER_PAD;
+            int iconY = y + (h - 16) / 2;
+            g.renderItem(item.itemStack(), iconX, iconY);
+
+            // ── Row 1: item name + price ──────────────────────────────────────
+            int rowY = y + PAD_V;
+
+            String name = item.itemStack().getHoverName().getString();
+            // Reserve space for the price on the right
+            String priceStr = String.format("$%.2f", item.price());
+            int priceW  = font.width(priceStr);
+            int maxNameW = width - 18 - priceW - INNER_PAD * 3;
+            if (font.width(name) > maxNameW) {
+                name = font.plainSubstrByWidth(name, maxNameW - 6) + "…";
+            }
+            g.drawString(font, name, textLeft, rowY, 0xFFFFFFFF, false);
+            g.drawString(font, priceStr, rightEdge - priceW, rowY, 0xFFFFAA00, false);
+            rowY += lineStep;
+
+            // ── Rows 2..N+1: enchantment list ────────────────────────────────
+            for (var entry : enchantList) {
+                Component fullName = Enchantment.getFullname(entry.getKey(), entry.getIntValue());
+                String enchStr = "\u2022 " + fullName.getString(); // bullet
+                g.drawString(font, enchStr, textLeft + ENCHANT_INDENT, rowY, ENCHANT_COLOR, false);
+                rowY += lineStep;
             }
 
-            @Override
-            public boolean mouseClicked(MouseButtonEvent event, boolean focused) {
-                if (event.button() == 0) {
-                    GUIAuctionHouseSearch.this.pendingBuy = this.item;
-                    return true;
-                }
-                return false;
-            }
-
-            @Override
-            public void renderContent(GuiGraphics g, int mouseX, int mouseY, boolean hovered, float delta) {
-                // Entry's actual screen position — NOT the mouseX/mouseY passed in
-                int x = this.getX();
-                int y = this.getY();
-                int w = this.getWidth();
-                int h = this.getHeight();
-
-                // Hover tint + tooltip
-                if (hovered) {
-                    g.fill(x, y, x + w, y + h, 0x28FFFFFF);
-                    // setTooltipForNextFrame defers rendering to after all widgets —
-                    // no manual z-ordering needed
-                    g.setTooltipForNextFrame(
-                            GUIAuctionHouseSearch.this.font,
-                            item.itemStack(),
-                            mouseX, mouseY);
-                }
-
-                // Thin separator line at top of every entry
-                g.fill(x, y, x + w, y + 1, 0x30FFFFFF);
-
-                // ── Item icon (16×16, vertically centred) ──────────────────
-                int iconX = x + INNER_PAD;
-                int iconY = y + (h - 16) / 2;
-                g.renderItem(item.itemStack(), iconX, iconY);
-
-                // ── Text columns ───────────────────────────────────────────
-                var font   = GUIAuctionHouseSearch.this.font;
-                int textLeft = iconX + 18;
-                int topRow   = y + 4;
-                int botRow   = y + 4 + font.lineHeight + 1;
-
-                // Item name (white, truncated)
-                String name = item.itemStack().getHoverName().getString();
-                int maxNameW = w - 18 - 80 - INNER_PAD * 2;
-                if (font.width(name) > maxNameW) {
-                    name = font.plainSubstrByWidth(name, maxNameW - 6) + "…";
-                }
-                g.drawString(font, name, textLeft, topRow, 0xFFFFFFFF, false);
-
-                // Seller name (gray)
-                g.drawString(font, "by " + item.ownerName(), textLeft, botRow, 0xFF999999, false);
-
-                // ── Right column: price + time ─────────────────────────────
-                int rightEdge = x + w - INNER_PAD;
-
-                String priceStr = String.format("$%.2f", item.price());
-                int priceW = font.width(priceStr);
-                g.drawString(font, priceStr, rightEdge - priceW, topRow, 0xFFFFAA00, false);
-
-                String timeStr = item.timeLeft();
-                int timeW = font.width(timeStr);
-                g.drawString(font, timeStr, rightEdge - timeW, botRow, 0xFFAA55FF, false);
-            }
+            // ── Last row: seller + time ───────────────────────────────────────
+            g.drawString(font, "by " + item.ownerName(), textLeft, rowY, 0xFF999999, false);
+            String timeStr = item.timeLeft();
+            g.drawString(font, timeStr, rightEdge - font.width(timeStr), rowY, 0xFFAA55FF, false);
         }
     }
 }
