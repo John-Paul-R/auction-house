@@ -11,8 +11,8 @@ import eu.pb4.sgui.api.gui.SimpleGui;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.permissions.Permissions;
 import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
@@ -34,7 +34,7 @@ public class GUIAuctionItem extends SimpleGui {
     }
 
     public static void playClickSound(ServerPlayer player) {
-        player.playNotifySound(SoundEvents.UI_BUTTON_CLICK.value(), SoundSource.MASTER, 1, 1);
+        player.playSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.0f, 1.0f);
     }
 
     void updateDisplay() throws ExecutionException, InterruptedException {
@@ -115,7 +115,7 @@ public class GUIAuctionItem extends SimpleGui {
     }
 
     private DisplayElement trash() {
-        if (player.hasPermissions(4) || player.getStringUUID().equals(item.getUuid())) {
+        if (player.permissions().hasPermission(Permissions.COMMANDS_OWNER) || player.getStringUUID().equals(item.getUuid())) {
             return DisplayElement.of(GuiElementBuilder.from(Items.HOPPER.getDefaultInstance())
                     .setName(Component.literal("Remove from auction").withStyle(ChatFormatting.RED))
                     .hideDefaultTooltip()

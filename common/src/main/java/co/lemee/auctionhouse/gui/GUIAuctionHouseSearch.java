@@ -15,7 +15,7 @@ public class GUIAuctionHouseSearch extends Screen {
     protected void init() {
         Button buttonWidget = Button.builder(Component.literal("Hello World"), (btn) -> {
             // When the button is clicked, we can display a toast to the screen.
-            this.minecraft.getToasts().addToast(
+            this.minecraft.getToastManager().addToast(
                 SystemToast.multiline(
                     this.minecraft,
                     SystemToast.SystemToastId.NARRATOR_TOGGLE,

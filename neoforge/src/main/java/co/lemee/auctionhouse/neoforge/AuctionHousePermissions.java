@@ -6,6 +6,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.permissions.Permissions;
 import net.minecraft.commands.Commands;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -52,7 +53,7 @@ public class AuctionHousePermissions {
                 if (player == null) {
                     return false;
                 } else {
-                    return player.hasPermissions(4);
+                    return player.permissions().hasPermission(Permissions.COMMANDS_OWNER);
                 }
             });
     private static final PermissionNode<Boolean> SELL_PERM = new PermissionNode<>(

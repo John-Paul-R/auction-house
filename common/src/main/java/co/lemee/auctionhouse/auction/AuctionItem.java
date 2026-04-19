@@ -2,7 +2,7 @@ package co.lemee.auctionhouse.auction;
 
 import com.google.gson.JsonParser;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 
 import static co.lemee.auctionhouse.util.ComponentMapSerializer.deserialize;
@@ -29,7 +29,7 @@ public class AuctionItem {
 
     public AuctionItem(int id, String playerUuid, String owner, String nbt, String item, int count, double price, long secondsLeft) {
         this.id = id;
-        this.itemStack = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(item)), count);
+        this.itemStack = new ItemStack(BuiltInRegistries.ITEM.getValue(Identifier.parse(item)), count);
         this.itemStack.applyComponents(deserialize(JsonParser.parseString(nbt)));
         this.nbt = nbt;
         this.uuid = playerUuid;

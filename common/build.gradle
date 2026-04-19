@@ -23,7 +23,7 @@ dependencies {
     implementation "co.lemee.realeconomy:realeconomy:0.1.1+1.21.4-dev"
 
     modImplementation "org.sqlite:sqlite-jdbc:3.49.1.0"
-    modImplementation "eu.pb4:sgui:1.6.1+1.21.1"
+    modImplementation "eu.pb4:sgui:1.12.0+1.21.11"
 }
 
 publishing {
