@@ -1,6 +1,7 @@
 package co.lemee.auctionhouse.network;
 
 import co.lemee.auctionhouse.AuctionHouseMod;
+import co.lemee.auctionhouse.network.AuctionHouseBuyPayload;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerConfigurationConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerConfigurationNetworking;
@@ -9,36 +10,50 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.network.ServerCommonPacketListenerImpl;
 
 /**
- * Server-side registration of the configuration-phase handshake.
- * Call {@link #register()} once from the main Fabric mod initialiser.
+ * Server-side registration of the configuration-phase handshake and play-phase
+ * search payloads. Call {@link #register()} once from the main Fabric mod initialiser.
  */
 public final class AuctionHouseHandshake {
 
     private AuctionHouseHandshake() {}
 
     public static void register() {
-        // Declare the payload types for each direction
+        // ── Configuration-phase payload types ─────────────────────────────────
         PayloadTypeRegistry.configurationS2C().register(
                 AuctionHouseQueryPayload.TYPE, AuctionHouseQueryPayload.CODEC);
         PayloadTypeRegistry.configurationC2S().register(
                 AuctionHouseResponsePayload.TYPE, AuctionHouseResponsePayload.CODEC);
 
-        // Play-phase S2C: server asks client to open the search screen
+        // ── Play-phase payload types ───────────────────────────────────────────
+        // S2C: tells the client to open the search screen
         PayloadTypeRegistry.playS2C().register(
                 AuctionHouseOpenSearchPayload.TYPE, AuctionHouseOpenSearchPayload.CODEC);
+        // S2C: delivers a listing snapshot to the client
+        PayloadTypeRegistry.playS2C().register(
+                AuctionHouseListingsPayload.TYPE, AuctionHouseListingsPayload.CODEC);
+        // C2S: client asks for a fresh snapshot
+        PayloadTypeRegistry.playC2S().register(
+                AuctionHouseRequestListingsPayload.TYPE, AuctionHouseRequestListingsPayload.CODEC);
+        // C2S: client confirms a purchase
+        PayloadTypeRegistry.playC2S().register(
+                AuctionHouseBuyPayload.TYPE, AuctionHouseBuyPayload.CODEC);
 
-        // Set the common-module hook so AuctionHouseSearchCommand can send without platform imports
-        AuctionHouseMod.openSearchScreen =
-                player -> ServerPlayNetworking.send(player, new AuctionHouseOpenSearchPayload());
+        // ── Common-module hooks ────────────────────────────────────────────────
 
-        // During config phase: send the query only if the client advertises the channel
+        // openSearchScreen: send the open-trigger + initial snapshot together
+        AuctionHouseMod.openSearchScreen = player -> {
+            ServerPlayNetworking.send(player, new AuctionHouseOpenSearchPayload());
+            ServerPlayNetworking.send(player, AuctionHouseMod.buildListingsPayload());
+        };
+
+        // ── Config-phase handshake: server → client ────────────────────────────
         ServerConfigurationConnectionEvents.CONFIGURE.register((handler, server) -> {
             if (ServerConfigurationNetworking.canSend(handler, AuctionHouseQueryPayload.TYPE)) {
                 ServerConfigurationNetworking.send(handler, new AuctionHouseQueryPayload());
             }
         });
 
-        // Receive the client's version response and store it
+        // Config-phase handshake: client → server (version stored)
         ServerConfigurationNetworking.registerGlobalReceiver(
                 AuctionHouseResponsePayload.TYPE,
                 (payload, context) -> {
@@ -49,7 +64,25 @@ public final class AuctionHouseHandshake {
                             profile.name(), payload.version());
                 });
 
-        // Clean up when a player disconnects during play phase
+        // ── Play-phase: refresh request (C2S) ─────────────────────────────────
+        ServerPlayNetworking.registerGlobalReceiver(
+                AuctionHouseRequestListingsPayload.TYPE,
+                (payload, context) -> {
+                    // Respond on the server thread — ah.items is not thread-safe
+                    context.server().execute(() ->
+                            ServerPlayNetworking.send(
+                                    context.player(),
+                                    AuctionHouseMod.buildListingsPayload()));
+                });
+
+        // ── Play-phase: buy request (C2S) ─────────────────────────────────────
+        ServerPlayNetworking.registerGlobalReceiver(
+                AuctionHouseBuyPayload.TYPE,
+                (payload, context) ->
+                        context.server().execute(() ->
+                                AuctionHouseMod.handleBuy(context.player(), payload.auctionId())));
+
+        // ── Disconnect cleanup ─────────────────────────────────────────────────
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
                 ClientModStatus.remove(handler.player.getUUID()));
     }

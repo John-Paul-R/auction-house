@@ -17,17 +17,27 @@ public abstract class EconomyHandler {
                 INSTANCE = new RealEconomyHandler();
             } else if(AuctionHouseMod.impactor){
                 LOGGER.warn("Impactor detected, enabling impactor economy integration");
-                INSTANCE =  new ImpactorEconomyHandler();
+                try {
+                    INSTANCE = new ImpactorEconomyHandler();
+                } catch (NoClassDefFoundError | ExceptionInInitializerError e) {
+                    LOGGER.error("AuctionHouse: Impactor classes not found despite flag being set — falling back to no-economy stub", e);
+                    INSTANCE = new NoEconomyHandler();
+                }
             } else {
-                LOGGER.warn("No economy plugin detected, please install Impactor or RealEconomy");
-                INSTANCE =  new ImpactorEconomyHandler();
+                LOGGER.warn("No economy plugin detected, please install Impactor or RealEconomy — buy/sell will not work");
+                INSTANCE = new NoEconomyHandler();
             }
         }
 
         return INSTANCE;
     }
 
-    protected abstract boolean add(UUID accountUUID, double amount) ;
+    /** Returns {@code false} when no economy plugin is available. */
+    public boolean isAvailable() {
+        return true;
+    }
+
+    protected abstract boolean add(UUID accountUUID, double amount);
     protected abstract boolean remove(UUID accountUUID, double amount);
     public abstract double getBalance(UUID accountUUID);
 
