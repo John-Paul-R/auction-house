@@ -57,6 +57,11 @@ public class AuctionHouseFabricMod implements ModInitializer {
                         .requires(Permissions.require("auctionhouse.selling", 0))
                         .executes(AuctionHouseSellingCommand::run))));
 
+        CommandRegistrationCallback.EVENT.register((dispatcher, commandRegistryAccess, registrationEnvironment) -> dispatcher.register(Commands.literal("ah")
+            .then(Commands.literal("search")
+                .requires(Permissions.require("auctionhouse.main", 0))
+                .executes(AuctionHouseSearchCommand::run))));
+
         LOGGER.info("AuctionHouse loaded!");
     }
 }
