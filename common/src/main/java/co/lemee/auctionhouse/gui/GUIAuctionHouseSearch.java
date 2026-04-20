@@ -150,6 +150,10 @@ public class GUIAuctionHouseSearch extends Screen {
         resultList = new VariableHeightList(this.font, panelX + 1, listY, panelW - 2, listH);
         this.addRenderableWidget(resultList);
 
+        // Force applyFilter() to repopulate the freshly-created resultList widget.
+        // Without this, a window resize would call init() → applyFilter() but the
+        // filter would exit early ("nothing changed") and leave the list empty.
+        dataStale = true;
         applyFilter();
     }
 
