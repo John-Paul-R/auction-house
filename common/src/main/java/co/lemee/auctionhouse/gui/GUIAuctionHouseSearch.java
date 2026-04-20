@@ -8,6 +8,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponents;
@@ -195,8 +196,10 @@ public class GUIAuctionHouseSearch extends Screen {
             cancelButton.repositionTo(cancelBtnX, btnY);
         }
 
-        this.addRenderableWidget(confirmButton);
-        this.addRenderableWidget(cancelButton);
+        // Register for input routing only — rendering is done manually in render()
+        // AFTER drawBuyOverlayChrome() so the buttons appear on top of the dim layer.
+        this.addWidget(confirmButton);
+        this.addWidget(cancelButton);
 
         // Sync button visibility with current pendingBuy state (handles resize
         // while the overlay is open).
@@ -272,11 +275,13 @@ public class GUIAuctionHouseSearch extends Screen {
                 panelY + panelH - STATUS_H,
                 0xFF888888, false);
 
-        // Buy confirmation overlay chrome — rendered on top of everything.
-        // UIButton widgets (Confirm / Cancel) are rendered by the widget system
-        // as part of super.render() above; we only need to draw the panel here.
+        // Buy confirmation overlay chrome + buttons — rendered after all widgets
+        // so they appear on top of the dim layer.
         if (pendingBuy != null) {
             drawBuyOverlayChrome(g);
+            // Render buttons manually here so they appear above the dim overlay.
+            confirmButton.render(g, mouseX, mouseY, delta);
+            cancelButton.render(g, mouseX, mouseY, delta);
         }
     }
 
@@ -342,10 +347,27 @@ public class GUIAuctionHouseSearch extends Screen {
                 setPendingBuy(null);
                 return true;
             }
-            // Let registered widgets (UIButton) handle clicks inside the overlay.
-            return super.mouseClicked(event, focused);
+            // Dispatch to buttons directly so they get priority over the result
+            // list (which is earlier in the children list and would otherwise
+            // consume the event first).  UIButton.mouseClicked self-filters via
+            // isMouseOver, so only the button actually under the cursor fires.
+            confirmButton.mouseClicked(event, false);
+            cancelButton.mouseClicked(event, false);
+            // Consume regardless — clicks inside the overlay must never reach
+            // the item entries behind it.
+            return true;
         }
         return super.mouseClicked(event, focused);
+    }
+
+    @Override
+    public boolean keyPressed(KeyEvent event) {
+        // ESC while overlay is open → close overlay only, not the whole screen.
+        if (event.key() == 256 /* GLFW_KEY_ESCAPE */ && pendingBuy != null) {
+            setPendingBuy(null);
+            return true;
+        }
+        return super.keyPressed(event);
     }
 
     @Override
@@ -475,7 +497,10 @@ public class GUIAuctionHouseSearch extends Screen {
 
             if (hovered) {
                 g.fill(x, y, x + width, y + h, 0x28FFFFFF);
-                g.setTooltipForNextFrame(font, item.itemStack(), mouseX, mouseY);
+                // Suppress item tooltip while the buy overlay is open.
+                if (GUIAuctionHouseSearch.this.pendingBuy == null) {
+                    g.setTooltipForNextFrame(font, item.itemStack(), mouseX, mouseY);
+                }
             }
 
             // Top separator
@@ -585,7 +610,10 @@ public class GUIAuctionHouseSearch extends Screen {
 
             if (hovered) {
                 g.fill(x, y, x + width, y + h, 0x28FFFFFF);
-                g.setTooltipForNextFrame(font, item.itemStack(), mouseX, mouseY);
+                // Suppress item tooltip while the buy overlay is open.
+                if (GUIAuctionHouseSearch.this.pendingBuy == null) {
+                    g.setTooltipForNextFrame(font, item.itemStack(), mouseX, mouseY);
+                }
             }
 
             // Top separator
