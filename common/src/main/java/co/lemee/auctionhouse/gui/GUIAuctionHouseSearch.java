@@ -583,10 +583,9 @@ public class GUIAuctionHouseSearch extends Screen {
                            int mouseX, int mouseY, boolean hovered, Font font) {
             int h = getHeight(font);
 
-            if (hovered) {
+            if (hovered && GUIAuctionHouseSearch.this.pendingBuy == null) {
                 g.fill(x, y, x + width, y + h, C_HOVER_BG);
-                if (GUIAuctionHouseSearch.this.pendingBuy == null)
-                    g.setTooltipForNextFrame(font, item.itemStack(), mouseX, mouseY);
+                g.setTooltipForNextFrame(font, item.itemStack(), mouseX, mouseY);
             }
             g.fill(x, y, x + width, y + 1, C_SEPARATOR);
 
@@ -675,10 +674,9 @@ public class GUIAuctionHouseSearch extends Screen {
             int textLeft  = x + INNER_PAD + 18;
             int rightEdge = x + width - INNER_PAD;
 
-            if (hovered) {
+            if (hovered && GUIAuctionHouseSearch.this.pendingBuy == null) {
                 g.fill(x, y, x + width, y + h, C_HOVER_BG);
-                if (GUIAuctionHouseSearch.this.pendingBuy == null)
-                    g.setTooltipForNextFrame(font, item.itemStack(), mouseX, mouseY);
+                g.setTooltipForNextFrame(font, item.itemStack(), mouseX, mouseY);
             }
             g.fill(x, y, x + width, y + 1, C_SEPARATOR);
 
