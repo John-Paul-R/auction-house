@@ -48,18 +48,30 @@ import java.util.stream.Collectors;
  * Entries are rendered by {@link VariableHeightList}, which supports variable row heights.
  * Enchanted books (and regular enchanted items) get an expanded row listing each
  * enchantment by name, while all other items use the compact two-line layout.
+ * <p>
+ * Interactive elements (Confirm / Cancel in the buy overlay) are managed as
+ * {@link UIButton} instances registered with {@code addRenderableWidget()} in
+ * {@link #init()}.  MC's widget routing handles hover detection and click dispatch
+ * automatically — no manual bounding-box fields or custom iteration loops.
  */
 public class GUIAuctionHouseSearch extends Screen {
 
     // --- Constants -----------------------------------------------------------
 
-    private static final int PANEL_MARGIN     = 10;
-    private static final int TITLE_H          = 14;
-    private static final int BOX_H            = 20;
-    private static final int STATUS_H         = 12;
+    private static final int PANEL_MARGIN = 10;
+    private static final int TITLE_H      = 14;
+    private static final int BOX_H        = 20;
+    private static final int STATUS_H     = 12;
     /** Base entry height used for plain items and as the minimum for expanded entries. */
-    static final int BASE_ENTRY_H             = 28;
-    private static final int INNER_PAD        = 4;
+    static final int BASE_ENTRY_H         = 28;
+    private static final int INNER_PAD    = 4;
+
+    /** Width / height of the buy-confirmation overlay panel. */
+    private static final int OVERLAY_W = 240;
+    private static final int OVERLAY_H = 94;
+    /** Button dimensions inside the overlay. */
+    private static final int BTN_W = 90;
+    private static final int BTN_H = 20;
 
     // --- State ---------------------------------------------------------------
 
@@ -79,17 +91,24 @@ public class GUIAuctionHouseSearch extends Screen {
 
     // --- Widgets -------------------------------------------------------------
 
-    private EditBox          searchBox;
+    private EditBox            searchBox;
     private VariableHeightList resultList;
 
-    // --- Buy confirmation state -------------------------------------------
+    // --- Buy confirmation state ----------------------------------------------
 
     /** Non-null when the player has clicked a listing and is seeing the buy prompt. */
     @Nullable private ClientAuctionItem pendingBuy = null;
-    // Bounding boxes set each frame during drawBuyOverlay() — used in mouseClicked()
-    private int overlayX, overlayY, overlayW, overlayH;
-    private int confirmBX, confirmBY, confirmBW, confirmBH;
-    private int cancelBX,  cancelBY,  cancelBW,  cancelBH;
+
+    /**
+     * Overlay panel rect — set once in {@link #init()} and used by
+     * {@link #mouseClicked} to detect click-outside-to-dismiss.
+     * Only 4 values needed; button positions are owned by {@link UIButton}.
+     */
+    private int overlayX, overlayY;   // overlayW/H are constants above
+
+    /** Confirm and Cancel buttons for the buy overlay. */
+    private UIButton confirmButton;
+    private UIButton cancelButton;
 
     // =========================================================================
     // Construction
@@ -150,11 +169,68 @@ public class GUIAuctionHouseSearch extends Screen {
         resultList = new VariableHeightList(this.font, panelX + 1, listY, panelW - 2, listH);
         this.addRenderableWidget(resultList);
 
+        // -- Buy overlay buttons ----------------------------------------------
+        // Compute overlay position from current screen dimensions (constant size).
+        overlayX = (this.width  - OVERLAY_W) / 2;
+        overlayY = (this.height - OVERLAY_H) / 2;
+
+        int btnY        = overlayY + 58;
+        int confirmBtnX = overlayX + 16;
+        int cancelBtnX  = overlayX + OVERLAY_W - 16 - BTN_W;
+
+        if (confirmButton == null) {
+            // First init — create the button instances with their onClick closures.
+            confirmButton = new UIButton(this.font, confirmBtnX, btnY, BTN_W, BTN_H,
+                    "Confirm", UIButton.Style.GREEN, () -> {
+                        if (pendingBuy != null) {
+                            AuctionHouseMod.sendBuy.accept(pendingBuy.id());
+                            this.onClose();
+                        }
+                    });
+            cancelButton = new UIButton(this.font, cancelBtnX, btnY, BTN_W, BTN_H,
+                    "Cancel", UIButton.Style.RED, () -> setPendingBuy(null));
+        } else {
+            // Subsequent init (resize) — reposition existing instances.
+            confirmButton.repositionTo(confirmBtnX, btnY);
+            cancelButton.repositionTo(cancelBtnX, btnY);
+        }
+
+        this.addRenderableWidget(confirmButton);
+        this.addRenderableWidget(cancelButton);
+
+        // Sync button visibility with current pendingBuy state (handles resize
+        // while the overlay is open).
+        updateOverlayButtonVisibility();
+
         // Force applyFilter() to repopulate the freshly-created resultList widget.
         // Without this, a window resize would call init() → applyFilter() but the
         // filter would exit early ("nothing changed") and leave the list empty.
         dataStale = true;
         applyFilter();
+    }
+
+    /**
+     * Set or clear the pending buy item, and sync overlay button visibility.
+     */
+    private void setPendingBuy(@Nullable ClientAuctionItem item) {
+        this.pendingBuy = item;
+        updateOverlayButtonVisibility();
+    }
+
+    /**
+     * Show / hide and enable / disable the overlay buttons based on whether
+     * there is a pending buy.  Called from {@link #init()} and whenever
+     * {@link #pendingBuy} changes.
+     */
+    private void updateOverlayButtonVisibility() {
+        if (confirmButton == null || cancelButton == null) return;
+        if (pendingBuy != null) {
+            confirmButton.show();
+            cancelButton.show();
+        } else {
+            confirmButton.hide();
+            cancelButton.hide();
+        }
     }
 
     /**
@@ -174,13 +250,7 @@ public class GUIAuctionHouseSearch extends Screen {
 
         // Panel background
         g.fill(panelX, panelY, panelX + panelW, panelY + panelH, 0xC0101010);
-
-        // Panel border (4 thin lines)
-        int col = 0xFF444444;
-        g.fill(panelX,              panelY,              panelX + panelW, panelY + 1,           col);
-        g.fill(panelX,              panelY + panelH - 1, panelX + panelW, panelY + panelH,      col);
-        g.fill(panelX,              panelY,              panelX + 1,      panelY + panelH,       col);
-        g.fill(panelX + panelW - 1, panelY,              panelX + panelW, panelY + panelH,      col);
+        drawBorder(g, panelX, panelY, panelW, panelH, 0xFF444444);
 
         // Title (above the search box — behind no widget so safe to draw here)
         g.drawCenteredString(this.font, this.title, this.width / 2, panelY + 3, 0xFFFFFFFF);
@@ -202,36 +272,33 @@ public class GUIAuctionHouseSearch extends Screen {
                 panelY + panelH - STATUS_H,
                 0xFF888888, false);
 
-        // Buy confirmation overlay — rendered on top of everything
+        // Buy confirmation overlay chrome — rendered on top of everything.
+        // UIButton widgets (Confirm / Cancel) are rendered by the widget system
+        // as part of super.render() above; we only need to draw the panel here.
         if (pendingBuy != null) {
-            drawBuyOverlay(g, mouseX, mouseY);
+            drawBuyOverlayChrome(g);
         }
     }
 
-    /** Draws the buy-confirmation modal panel. Must be called after all widget rendering. */
-    private void drawBuyOverlay(GuiGraphics g, int mouseX, int mouseY) {
-        overlayW = 240;
-        overlayH = 94;
-        overlayX = (this.width  - overlayW) / 2;
-        overlayY = (this.height - overlayH) / 2;
-
+    /**
+     * Draws the buy-confirmation modal panel chrome: dim, background, border,
+     * item icon/name, and price text.  The Confirm/Cancel buttons are
+     * {@link UIButton} instances rendered automatically by the widget system.
+     */
+    private void drawBuyOverlayChrome(GuiGraphics g) {
         // Dim the rest of the screen
         g.fill(0, 0, this.width, this.height, 0x80000000);
 
         // Panel background + border
-        g.fill(overlayX, overlayY, overlayX + overlayW, overlayY + overlayH, 0xE0101010);
-        int bCol = 0xFF555555;
-        g.fill(overlayX,              overlayY,              overlayX + overlayW, overlayY + 1,           bCol);
-        g.fill(overlayX,              overlayY + overlayH - 1, overlayX + overlayW, overlayY + overlayH,  bCol);
-        g.fill(overlayX,              overlayY,              overlayX + 1,          overlayY + overlayH,   bCol);
-        g.fill(overlayX + overlayW - 1, overlayY,            overlayX + overlayW,  overlayY + overlayH,   bCol);
+        g.fill(overlayX, overlayY, overlayX + OVERLAY_W, overlayY + OVERLAY_H, 0xE0101010);
+        drawBorder(g, overlayX, overlayY, OVERLAY_W, OVERLAY_H, 0xFF555555);
 
         // Item icon + name
         int iconX = overlayX + 8;
         int iconY = overlayY + 10;
         g.renderItem(pendingBuy.itemStack(), iconX, iconY);
         String name = pendingBuy.itemStack().getHoverName().getString();
-        int maxNameW = overlayW - 36;
+        int maxNameW = OVERLAY_W - 36;
         if (this.font.width(name) > maxNameW) {
             name = this.font.plainSubstrByWidth(name, maxNameW - 6) + "\u2026";
         }
@@ -241,52 +308,42 @@ public class GUIAuctionHouseSearch extends Screen {
         String priceLine = String.format("Buy for $%.2f?", pendingBuy.price());
         int priceW = this.font.width(priceLine);
         g.drawString(this.font, priceLine,
-                overlayX + (overlayW - priceW) / 2, overlayY + 36, 0xFFFFAA00, false);
+                overlayX + (OVERLAY_W - priceW) / 2, overlayY + 36, 0xFFFFAA00, false);
+    }
 
-        // Buttons
-        int btnW = 90;
-        int btnH = 20;
-        int btnY = overlayY + 58;
-        confirmBX = overlayX + 16;               confirmBY = btnY; confirmBW = btnW; confirmBH = btnH;
-        cancelBX  = overlayX + overlayW - 16 - btnW; cancelBY = btnY; cancelBW = btnW; cancelBH = btnH;
-
-        boolean confirmHov = mouseX >= confirmBX && mouseX < confirmBX + confirmBW
-                          && mouseY >= confirmBY && mouseY < confirmBY + confirmBH;
-        boolean cancelHov  = mouseX >= cancelBX  && mouseX < cancelBX  + cancelBW
-                          && mouseY >= cancelBY  && mouseY < cancelBY  + cancelBH;
-
-        g.fill(confirmBX, confirmBY, confirmBX + confirmBW, confirmBY + confirmBH,
-                confirmHov ? 0xFF2A6E2A : 0xFF1E521E);
-        g.drawCenteredString(this.font, "Confirm",
-                confirmBX + confirmBW / 2, confirmBY + (confirmBH - this.font.lineHeight) / 2, 0xFF55FF55);
-
-        g.fill(cancelBX, cancelBY, cancelBX + cancelBW, cancelBY + cancelBH,
-                cancelHov ? 0xFF6E2A2A : 0xFF521E1E);
-        g.drawCenteredString(this.font, "Cancel",
-                cancelBX + cancelBW / 2, cancelBY + (cancelBH - this.font.lineHeight) / 2, 0xFFFF5555);
+    /**
+     * Draws a 1-pixel border rectangle using four {@code g.fill} calls.
+     *
+     * @param g   graphics context
+     * @param x   left edge
+     * @param y   top edge
+     * @param w   total width (border included)
+     * @param h   total height (border included)
+     * @param col ARGB border colour
+     */
+    private static void drawBorder(GuiGraphics g, int x, int y, int w, int h, int col) {
+        g.fill(x,         y,         x + w, y + 1,     col); // top
+        g.fill(x,         y + h - 1, x + w, y + h,     col); // bottom
+        g.fill(x,         y,         x + 1, y + h,     col); // left
+        g.fill(x + w - 1, y,         x + w, y + h,     col); // right
     }
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean focused) {
+        // While the overlay is visible, UIButton widgets handle Confirm and Cancel
+        // automatically.  We only need to dismiss when the player clicks OUTSIDE
+        // the overlay panel.
         if (pendingBuy != null && event.button() == 0) {
-            int mx = (int) event.x();
-            int my = (int) event.y();
-            // Confirm
-            if (mx >= confirmBX && mx < confirmBX + confirmBW && my >= confirmBY && my < confirmBY + confirmBH) {
-                AuctionHouseMod.sendBuy.accept(pendingBuy.id());
-                this.onClose();
+            double mx = event.x();
+            double my = event.y();
+            boolean insideOverlay = mx >= overlayX && mx < overlayX + OVERLAY_W
+                                 && my >= overlayY && my < overlayY + OVERLAY_H;
+            if (!insideOverlay) {
+                setPendingBuy(null);
                 return true;
             }
-            // Cancel
-            if (mx >= cancelBX && mx < cancelBX + cancelBW && my >= cancelBY && my < cancelBY + cancelBH) {
-                pendingBuy = null;
-                return true;
-            }
-            // Click outside panel also dismisses
-            if (mx < overlayX || mx >= overlayX + overlayW || my < overlayY || my >= overlayY + overlayH) {
-                pendingBuy = null;
-            }
-            return true; // consume all clicks while overlay is visible
+            // Let registered widgets (UIButton) handle clicks inside the overlay.
+            return super.mouseClicked(event, focused);
         }
         return super.mouseClicked(event, focused);
     }
@@ -405,7 +462,7 @@ public class GUIAuctionHouseSearch extends Screen {
         @Override
         public boolean mouseClicked(MouseButtonEvent event, boolean focused) {
             if (event.button() == 0) {
-                GUIAuctionHouseSearch.this.pendingBuy = this.item;
+                GUIAuctionHouseSearch.this.setPendingBuy(this.item);
                 return true;
             }
             return false;
@@ -511,7 +568,7 @@ public class GUIAuctionHouseSearch extends Screen {
         @Override
         public boolean mouseClicked(MouseButtonEvent event, boolean focused) {
             if (event.button() == 0) {
-                GUIAuctionHouseSearch.this.pendingBuy = this.item;
+                GUIAuctionHouseSearch.this.setPendingBuy(this.item);
                 return true;
             }
             return false;
