@@ -41,10 +41,9 @@ import java.util.stream.Collectors;
  *   │  Showing X / Y listings            │  ← status
  *   └─────────────────────────────────────┘
  * </pre>
- * The server pushes a full {@link co.lemee.auctionhouse.network.AuctionHouseListingsPayload}
- * snapshot when the screen opens, and again in response to a
- * {@link co.lemee.auctionhouse.network.AuctionHouseRequestListingsPayload} sent every
- * {@value #REFRESH_INTERVAL} ticks (~3 s).  Filtering is applied locally on the client.
+ * The server sends a full {@link co.lemee.auctionhouse.network.AuctionHouseListingsPayload}
+ * snapshot when the screen opens, and pushes further snapshots whenever the auction house
+ * state changes (item added, bought, or expired).  Filtering is applied locally on the client.
  * <p>
  * Entries are rendered by {@link VariableHeightList}, which supports variable row heights.
  * Enchanted books (and regular enchanted items) get an expanded row listing each
@@ -54,7 +53,6 @@ public class GUIAuctionHouseSearch extends Screen {
 
     // --- Constants -----------------------------------------------------------
 
-    private static final int REFRESH_INTERVAL = 60; // ticks ≈ 3 s
     private static final int PANEL_MARGIN     = 10;
     private static final int TITLE_H          = 14;
     private static final int BOX_H            = 20;
@@ -67,7 +65,17 @@ public class GUIAuctionHouseSearch extends Screen {
 
     private List<ClientAuctionItem> allItems      = new ArrayList<>();
     private List<ClientAuctionItem> filteredItems = new ArrayList<>();
-    private String                  lastQuery     = null;
+    /**
+     * The last query string that was actually applied to {@link #allItems}.
+     * {@code null} means no filter has been run yet.
+     */
+    private String  lastAppliedQuery = null;
+    /**
+     * Set to {@code true} by {@link #onListingsUpdate} to signal that the
+     * underlying data changed and a re-filter is required even if the query
+     * text hasn't changed.  Does NOT trigger a scroll reset.
+     */
+    private boolean dataStale        = false;
 
     // --- Widgets -------------------------------------------------------------
 
@@ -82,10 +90,6 @@ public class GUIAuctionHouseSearch extends Screen {
     private int overlayX, overlayY, overlayW, overlayH;
     private int confirmBX, confirmBY, confirmBW, confirmBH;
     private int cancelBX,  cancelBY,  cancelBW,  cancelBH;
-
-    // --- Timing --------------------------------------------------------------
-
-    private int tickCount = 0;
 
     // =========================================================================
     // Construction
@@ -112,7 +116,7 @@ public class GUIAuctionHouseSearch extends Screen {
 
     private void onListingsUpdate(List<ClientAuctionItem> newListings) {
         this.allItems = new ArrayList<>(newListings);
-        this.lastQuery = null; // force a refilter pass
+        this.dataStale = true; // re-filter needed; scroll position is preserved
         applyFilter();
     }
 
@@ -135,10 +139,7 @@ public class GUIAuctionHouseSearch extends Screen {
         searchBox = new EditBox(this.font, boxX, boxY, boxW, BOX_H, Component.literal("Search..."));
         searchBox.setMaxLength(64);
         searchBox.setHint(Component.literal("Search items or sellers…").withStyle(ChatFormatting.DARK_GRAY));
-        searchBox.setResponder(text -> {
-            this.lastQuery = null; // trigger refilter
-            applyFilter();
-        });
+        searchBox.setResponder(text -> applyFilter());
         this.addRenderableWidget(searchBox);
         this.setInitialFocus(searchBox);
 
@@ -150,16 +151,6 @@ public class GUIAuctionHouseSearch extends Screen {
         this.addRenderableWidget(resultList);
 
         applyFilter();
-    }
-
-    @Override
-    public void tick() {
-        super.tick();
-        tickCount++;
-        if (tickCount >= REFRESH_INTERVAL) {
-            tickCount = 0;
-            AuctionHouseMod.requestListingsRefresh.run();
-        }
     }
 
     /**
@@ -309,8 +300,13 @@ public class GUIAuctionHouseSearch extends Screen {
         if (searchBox == null) return;
 
         String query = searchBox.getValue().toLowerCase(Locale.ROOT).trim();
-        if (query.equals(lastQuery)) return;
-        lastQuery = query;
+        boolean queryChanged = !query.equals(lastAppliedQuery);
+
+        // Nothing to do if neither the query nor the underlying data changed.
+        if (!queryChanged && !dataStale) return;
+
+        lastAppliedQuery = query;
+        dataStale        = false;
 
         if (query.isEmpty()) {
             filteredItems = new ArrayList<>(allItems);
@@ -326,6 +322,9 @@ public class GUIAuctionHouseSearch extends Screen {
 
         if (resultList != null) {
             resultList.setEntries(buildEntries(filteredItems));
+            // Only reset scroll when the user changes their query, not on a
+            // server-pushed data refresh with the same query.
+            if (queryChanged) resultList.resetScroll();
         }
     }
 

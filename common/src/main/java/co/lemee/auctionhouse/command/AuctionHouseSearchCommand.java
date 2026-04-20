@@ -14,8 +14,8 @@ public class AuctionHouseSearchCommand {
         if (player == null) return 0;
 
         if (ClientModStatus.hasClientMod(player.getUUID())) {
-            // Client has the mod — ask it to open the search screen
-            AuctionHouseMod.openSearchScreen.accept(player);
+            // Register the player as a search-screen watcher and open the screen
+            AuctionHouseMod.openSearchForPlayer(player);
         } else {
             // Vanilla client or client without the mod — inform the player
             player.sendSystemMessage(Component.literal(

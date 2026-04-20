@@ -46,6 +46,9 @@ public final class AuctionHouseHandshake {
             ServerPlayNetworking.send(player, AuctionHouseMod.buildListingsPayload());
         };
 
+        // pushListingsToPlayer: used by notifyListingsChanged() for server-push updates
+        AuctionHouseMod.pushListingsToPlayer = ServerPlayNetworking::send;
+
         // ── Config-phase handshake: server → client ────────────────────────────
         ServerConfigurationConnectionEvents.CONFIGURE.register((handler, server) -> {
             if (ServerConfigurationNetworking.canSend(handler, AuctionHouseQueryPayload.TYPE)) {
@@ -83,7 +86,9 @@ public final class AuctionHouseHandshake {
                                 AuctionHouseMod.handleBuy(context.player(), payload.auctionId())));
 
         // ── Disconnect cleanup ─────────────────────────────────────────────────
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
-                ClientModStatus.remove(handler.player.getUUID()));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            ClientModStatus.remove(handler.player.getUUID());
+            AuctionHouseMod.removeWatcher(handler.player.getUUID());
+        });
     }
 }

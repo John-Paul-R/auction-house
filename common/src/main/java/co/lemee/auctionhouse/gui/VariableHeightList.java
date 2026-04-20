@@ -61,6 +61,13 @@ public class VariableHeightList extends AbstractWidget {
         entries.clear();
         entries.addAll(newEntries);
         recomputeTotalHeight();
+        // Scroll position is preserved intentionally: a server-pushed data refresh
+        // must not jolt the user back to the top.  Callers that want to reset
+        // (e.g. on a new search query) should call resetScroll() explicitly.
+    }
+
+    /** Snap the scroll position back to the top of the list. */
+    public void resetScroll() {
         scrollAmt = 0.0;
     }
 

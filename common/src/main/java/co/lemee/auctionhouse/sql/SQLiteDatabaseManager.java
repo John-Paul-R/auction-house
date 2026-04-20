@@ -71,6 +71,7 @@ public class SQLiteDatabaseManager implements DatabaseManager {
             pstmt.setLong(7, secondsLeft);
             pstmt.executeUpdate();
             CommonMethods.reloadHouse();
+            AuctionHouseMod.notifyListingsChanged();
             return getMostRecentId();
         } catch (SQLException e) {
             LOGGER.error("Failed to add item to auction", e);
@@ -134,6 +135,7 @@ public class SQLiteDatabaseManager implements DatabaseManager {
             pstmt.setInt(1, item.getId());
             pstmt.executeUpdate();
             AuctionHouseMod.ah.removeItem(item);
+            AuctionHouseMod.notifyListingsChanged();
         } catch (SQLException e) {
             LOGGER.error("Failed to remove item from auction", e);
         }

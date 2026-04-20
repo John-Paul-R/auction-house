@@ -108,7 +108,10 @@ public class AuctionHouseNetworkHandlers {
             PacketDistributor.sendToPlayer(player, AuctionHouseMod.buildListingsPayload());
         };
 
-        // requestListingsRefresh: called by the client screen every ~3 s
+        // pushListingsToPlayer: used by notifyListingsChanged() for server-push updates
+        AuctionHouseMod.pushListingsToPlayer = PacketDistributor::sendToPlayer;
+
+        // requestListingsRefresh: deprecated no-op (polling replaced by server push)
         AuctionHouseMod.requestListingsRefresh = () -> {
             var conn = Minecraft.getInstance().getConnection();
             if (conn != null) {
