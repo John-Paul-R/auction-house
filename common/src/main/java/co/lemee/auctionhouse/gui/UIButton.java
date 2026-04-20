@@ -106,7 +106,9 @@ public class UIButton extends AbstractWidget {
         g.fill(x, y, x + w, y + h, hovered ? style.hoverBg() : style.normalBg());
 
         int textX = x + w / 2;
-        int textY = y + (h - font.lineHeight) / 2;
+        // Use glyph height (lineHeight - 1) for centering, not lineHeight,
+        // which includes 1px of line-spacing and would push the text 1px too high.
+        int textY = y + (h - (font.lineHeight - 1)) / 2;
         g.drawCenteredString(font, label, textX, textY, style.textColor());
     }
 
